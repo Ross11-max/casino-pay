@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Casino VIP Store Payment</title>
-<!-- Static page: everything comes from the link (?a=address&m=amount&i=item). No server, no tracking, nothing is sent anywhere. -->
+<!-- Static page: everything comes from the link (?a=address&m=amount&i=item[&c=bnb]). No server, no tracking, nothing is sent anywhere. -->
 <style>
   :root {
     --bg: #14100c; --card: #221a12; --line: #3d2f20; --text: #f4ead8; --muted: #b9a888;
@@ -57,22 +57,32 @@
 
     <div class="card">
       <div class="muted">Send exactly</div>
-      <div class="amount"><span id="amt"></span> USDT</div>
-      <span class="net">Network: BNB Smart Chain (BEP20)</span>
+      <div class="amount"><span id="amt"></span> <span class="coin">USDT</span></div>
+      <div class="row" style="margin-top:2px"><span class="net">Network: BNB Smart Chain (BEP20)</span><button class="copy" data-copy="amt" style="margin-left:auto">Copy amount</button></div>
       <p class="muted" style="margin:12px 0 6px">To this address:</p>
       <div class="row"><div class="addr" id="addr"></div><button class="copy" data-copy="addr">Copy</button></div>
-      <p class="muted" style="margin:10px 0 0">Your item shows up in the game automatically about a minute after the payment goes through.</p>
+      <p class="muted" style="margin:10px 0 0" id="after">Your item shows up in the game automatically about a minute after the payment goes through.</p>
     </div>
 
     <div class="card">
       <h2>Pay with a wallet app</h2>
       <a class="btn" id="trust">Open in Trust Wallet</a>
-      <a class="btn" id="mm">Open in MetaMask</a>
+      <a class="btn alt" id="trust2">Trust Wallet didn't open? Try this</a>
+      <a class="btn" id="mm" style="margin-top:10px">Open in MetaMask</a>
       <p class="muted" style="margin:10px 0 0">Opens the send screen with the coin, network, amount and address filled in. Check them, then confirm.
       Wallet apps need a few cents of <b>BNB</b> for the network fee.</p>
+      <details style="margin-top:10px">
+        <summary>Do it by hand in Trust Wallet</summary>
+        <ol>
+          <li>Tap <b>Send</b> and search <b class="coin">USDT</b>.</li>
+          <li>Pick the one marked <b>BNB Smart Chain</b> (small BNB badge on the icon), not Ethereum, Tron or opBNB.</li>
+          <li>Paste the address (tap <b>Copy</b> above) and enter <b><span class="amt2"></span></b> (tap <b>Copy</b> next to the amount).</li>
+          <li>On the confirm screen the network fee must be in <b>BNB</b>. Then confirm.</li>
+        </ol>
+      </details>
     </div>
 
-    <div class="card">
+    <div class="card usdt-only">
       <h2>Pay from an exchange app</h2>
       <details>
         <summary>Binance</summary>
@@ -103,7 +113,7 @@
       </details>
     </div>
 
-    <div class="card warn">
+    <div class="card warn usdt-only">
       <p style="margin:0 0 8px"><strong>Exchange fees:</strong> most exchanges take their fee out of what you send. If the app shows
       "You will receive", that number must be at least <b><span class="amt2"></span> USDT</b>.</p>
       <p style="margin:0 0 8px"><strong>Sent too little?</strong> The game tells you what's missing. Send the rest to the same address.</p>
@@ -124,7 +134,8 @@
   var USDT_BSC = "0x55d398326f99059fF775485246999027B3197955"; // Tether USD on BNB Smart Chain (18 decimals)
   var p = new URLSearchParams(location.search);
   var a = p.get("a") || "", m = p.get("m") || "", i = (p.get("i") || "VIP item").slice(0, 60);
-  if (!/^0x[0-9a-fA-F]{40}$/.test(a) || !/^\d{1,5}(\.\d{1,2})?$/.test(m) || Number(m) <= 0) {
+  var bnb = p.get("c") === "bnb", coin = bnb ? "BNB" : "USDT";   // c=bnb: plain BNB coin (store fee-wallet top-ups)
+  if (!/^0x[0-9a-fA-F]{40}$/.test(a) || !(bnb ? /^\d{1,3}(\.\d{1,8})?$/ : /^\d{1,5}(\.\d{1,2})?$/).test(m) || Number(m) <= 0) {
     document.getElementById("bad").hidden = false; return;
   }
   document.getElementById("ok").hidden = false;
@@ -132,17 +143,26 @@
   document.getElementById("amt").textContent = m;
   document.querySelectorAll(".amt2").forEach(function (e) { e.textContent = m; });
   document.getElementById("addr").textContent = a;
-  document.title = "Pay " + m + " USDT - " + i;
+  document.querySelectorAll(".coin").forEach(function (e) { e.textContent = coin; });
+  document.title = "Pay " + m + " " + coin + " - " + i;
+  if (bnb) {
+    document.getElementById("after").textContent = "This is the BNB coin itself (not USDT). It pays the store's network fees.";
+    document.querySelectorAll(".usdt-only").forEach(function (e) { e.hidden = true; });
+  }
+  // exact base units (both USDT on BSC and BNB use 18 decimals) - no floating point
+  var parts = m.split("."), wei = (BigInt(parts[0]) * 10n ** 18n + BigInt(((parts[1] || "") + "0".repeat(18)).slice(0, 18))).toString();
 
-  document.getElementById("trust").href = "https://link.trustwallet.com/send?coin=20000714&token=" + USDT_BSC +
-    "&address=" + a + "&amount=" + m;
-  document.getElementById("mm").href = "https://metamask.app.link/send/" + USDT_BSC + "@56/transfer?address=" + a +
-    "&uint256=" + m + "e18";
+  // Trust Wallet asset ids (UAI): c20000714 = BNB Smart Chain coin, c20000714_t<contract> = a token on it
+  var q = "send?asset=" + (bnb ? "c20000714" : "c20000714_t" + USDT_BSC) + "&address=" + a + "&amount=" + m;
+  document.getElementById("trust").href = "trust://" + q;
+  document.getElementById("trust2").href = "https://link.trustwallet.com/" + q;
+  document.getElementById("mm").href = bnb ? "https://metamask.app.link/send/" + a + "@56?value=" + wei
+    : "https://metamask.app.link/send/" + USDT_BSC + "@56/transfer?address=" + a + "&uint256=" + wei;
 
   document.querySelectorAll("[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
-      var t = document.getElementById(b.dataset.copy).textContent;
-      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500); };
+      var t = document.getElementById(b.dataset.copy).textContent, label = b.textContent;
+      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = label; }, 1500); };
       if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, function () { sel(t); });
       else sel(t);
       function sel(t) { var r = document.createRange(); r.selectNodeContents(document.getElementById(b.dataset.copy));
